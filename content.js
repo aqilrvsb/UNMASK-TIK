@@ -2,43 +2,17 @@
  * Content Script for TikTok Order Unmasker
  *
  * This script runs on TikTok Seller Center pages and handles:
+ * - Scrolling to Customer details section
  * - Clicking reveal buttons to unmask customer data
  * - Extracting customer information from the page
- * - Navigating between order pages
  */
 
 // Configuration
 const CONFIG = {
-  selectors: {
-    // Reveal button selectors (multiple options for different TikTok versions)
-    revealButtons: [
-      '[data-log_click_for="open_phone_plaintext"]',
-      'button[class*="reveal"]',
-      '[class*="unmask"]',
-      '[class*="show-phone"]',
-      '[class*="view-detail"]'
-    ],
-    // Shipping section selectors
-    shippingSection: [
-      '[class*="shipping-to"]',
-      '[class*="recipient"]',
-      '[class*="address-info"]',
-      '[class*="buyer-info"]',
-      '.index-shipping-to'
-    ],
-    // Order detail page indicator
-    orderDetailPage: '[class*="order-detail"]',
-    // Name field
-    nameField: '[class*="recipient-name"], [class*="buyer-name"]',
-    // Phone field
-    phoneField: '[class*="phone"], [class*="mobile"]',
-    // Address field
-    addressField: '[class*="address"], [class*="location"]'
-  },
   timing: {
-    waitAfterClick: 2000,
+    waitAfterClick: 1500,
     waitForPageLoad: 3000,
-    delayBetweenOrders: 2000
+    waitBetweenClicks: 500
   }
 };
 
@@ -89,9 +63,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * Check if current page is the order detail page
  */
 function isOrderDetailPage() {
-  return CONFIG.selectors.orderDetailPage.some(selector => {
-    return document.querySelector(selector) !== null;
-  }) || window.location.href.includes('order/detail');
+  return window.location.href.includes('order/detail');
 }
 
 /**
@@ -107,197 +79,8 @@ function isLoginPage() {
  */
 async function navigateToOrder(orderId) {
   const url = `https://seller-my.tiktok.com/order/detail?order_no=${orderId}&shop_region=MY`;
-
-  // Navigate to the order
   window.location.href = url;
-
-  // Wait for navigation to complete
-  return new Promise((resolve) => {
-    // The page will reload, so this promise won't resolve
-    // Background script should handle this with tab update listener
-    setTimeout(() => resolve({ navigating: true }), 100);
-  });
-}
-
-/**
- * Wait for element to appear
- */
-function waitForElement(selectors, timeout = 10000) {
-  return new Promise((resolve) => {
-    const startTime = Date.now();
-
-    const check = () => {
-      // Try each selector
-      for (const selector of selectors) {
-        const element = document.querySelector(selector);
-        if (element) {
-          resolve(element);
-          return;
-        }
-      }
-
-      // Timeout check
-      if (Date.now() - startTime > timeout) {
-        resolve(null);
-        return;
-      }
-
-      // Keep checking
-      requestAnimationFrame(check);
-    };
-
-    check();
-  });
-}
-
-/**
- * Click all reveal buttons on the page
- */
-async function clickRevealButtons() {
-  let clickedCount = 0;
-  const results = [];
-
-  // Try each reveal button selector
-  for (const selector of CONFIG.selectors.revealButtons) {
-    const buttons = document.querySelectorAll(selector);
-
-    for (const button of buttons) {
-      try {
-        // Check if button is visible and clickable
-        const rect = button.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          // Simulate human-like click
-          button.click();
-          clickedCount++;
-          results.push({ selector, success: true });
-
-          // Small delay between clicks
-          await sleep(300 + Math.random() * 200);
-        }
-      } catch (e) {
-        results.push({ selector, success: false, error: e.message });
-      }
-    }
-  }
-
-  // Also try clicking any element with "reveal" or "show" text
-  const allButtons = document.querySelectorAll('button, [role="button"], a');
-  for (const btn of allButtons) {
-    const text = btn.textContent?.toLowerCase() || '';
-    if ((text.includes('reveal') || text.includes('show') || text.includes('view')) &&
-        text.length < 30) {
-      try {
-        const rect = btn.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          btn.click();
-          clickedCount++;
-          await sleep(300);
-        }
-      } catch (e) {
-        // Ignore
-      }
-    }
-  }
-
-  // Wait for data to load after clicking
-  if (clickedCount > 0) {
-    await sleep(CONFIG.timing.waitAfterClick);
-  }
-
-  return { clickedCount, results };
-}
-
-/**
- * Extract customer data from the page
- */
-async function extractCustomerData() {
-  // First, click reveal buttons
-  await clickRevealButtons();
-
-  // Wait a bit for data to appear
-  await sleep(1000);
-
-  // Try to find shipping/recipient section
-  let shippingSection = null;
-  for (const selector of CONFIG.selectors.shippingSection) {
-    shippingSection = document.querySelector(selector);
-    if (shippingSection) break;
-  }
-
-  // Extract data
-  const data = {
-    name: null,
-    phone_number: null,
-    full_address: null,
-    raw_texts: []
-  };
-
-  // Method 1: Try specific selectors
-  const nameEl = document.querySelector('[class*="recipient-name"], [class*="buyer-name"]');
-  const phoneEl = document.querySelector('[class*="phone-number"], [class*="mobile"]');
-  const addressEl = document.querySelector('[class*="full-address"], [class*="delivery-address"]');
-
-  if (nameEl) data.name = cleanText(nameEl.textContent);
-  if (phoneEl) data.phone_number = cleanText(phoneEl.textContent);
-  if (addressEl) data.full_address = cleanText(addressEl.textContent);
-
-  // Method 2: Search in shipping section
-  if (shippingSection) {
-    const textElements = shippingSection.querySelectorAll('span, div, p');
-    const texts = [];
-
-    for (const el of textElements) {
-      const text = cleanText(el.textContent);
-      if (text && text.length > 0 && !text.includes('***')) {
-        texts.push(text);
-      }
-    }
-
-    data.raw_texts = texts.slice(0, 10);
-
-    // Parse texts to identify name, phone, address
-    for (const text of texts) {
-      // Phone detection: starts with + or has 8+ digits
-      if (!data.phone_number && /^[\+]?[\d\s\-]{8,}$/.test(text.replace(/\s/g, ''))) {
-        data.phone_number = text;
-      }
-      // Address detection: long text or contains address keywords
-      else if (!data.full_address && (text.length > 30 || /\d{5}|jalan|lorong|taman|blok|unit|no\.|floor/i.test(text))) {
-        data.full_address = text;
-      }
-      // Name detection: shorter text without many numbers
-      else if (!data.name && text.length < 50 && text.length > 2 && !/\d{3,}/.test(text)) {
-        data.name = text;
-      }
-    }
-  }
-
-  // Method 3: Look for any unmasked text in the page
-  if (!data.name || !data.phone_number || !data.full_address) {
-    const pageText = document.body.innerText;
-
-    // Find phone number pattern
-    if (!data.phone_number) {
-      const phoneMatch = pageText.match(/(?:\+?60|0)[\d\s\-]{8,12}/);
-      if (phoneMatch) {
-        data.phone_number = phoneMatch[0].trim();
-      }
-    }
-  }
-
-  // Check if we got useful data
-  data.hasData = !!(data.name || data.phone_number || data.full_address);
-  data.isMasked = (data.name?.includes('***') || data.phone_number?.includes('***') || data.full_address?.includes('***'));
-
-  return data;
-}
-
-/**
- * Clean text - remove extra whitespace
- */
-function cleanText(text) {
-  if (!text) return '';
-  return text.replace(/\s+/g, ' ').trim();
+  return { navigating: true };
 }
 
 /**
@@ -305,6 +88,343 @@ function cleanText(text) {
  */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Scroll to Customer details section
+ */
+async function scrollToCustomerDetails() {
+  console.log('[Content] Scrolling to find Customer details...');
+
+  // Try to find "Customer details" text on the page
+  const allElements = document.querySelectorAll('*');
+  let customerDetailsSection = null;
+
+  for (const el of allElements) {
+    if (el.textContent && el.textContent.trim() === 'Customer details') {
+      customerDetailsSection = el;
+      break;
+    }
+  }
+
+  if (customerDetailsSection) {
+    console.log('[Content] Found Customer details section, scrolling...');
+    customerDetailsSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await sleep(500);
+    return true;
+  }
+
+  // Fallback: scroll down the page
+  console.log('[Content] Customer details not found by text, scrolling page...');
+  window.scrollTo(0, 500);
+  await sleep(300);
+  window.scrollTo(0, 1000);
+  await sleep(300);
+
+  return false;
+}
+
+/**
+ * Find and click all reveal/unmask icons
+ * These are the small arrow icons (∨) next to masked data like "h****************e"
+ */
+async function clickRevealButtons() {
+  console.log('[Content] Looking for reveal buttons...');
+  let clickedCount = 0;
+
+  // First, scroll to Customer details section
+  await scrollToCustomerDetails();
+  await sleep(500);
+
+  // Method 1: Find clickable elements near masked text (contains ***)
+  const allSpans = document.querySelectorAll('span, div, p');
+  const maskedElements = [];
+
+  for (const el of allSpans) {
+    const text = el.textContent || '';
+    // Look for masked patterns like "h****************e" or "(+60)138****36" or "f*******"
+    if (text.includes('***') && text.length < 100) {
+      maskedElements.push(el);
+    }
+  }
+
+  console.log('[Content] Found', maskedElements.length, 'masked elements');
+
+  // For each masked element, find nearby clickable icons
+  for (const maskedEl of maskedElements) {
+    // Look for clickable siblings or nearby elements
+    const parent = maskedEl.parentElement;
+    if (!parent) continue;
+
+    // Look within parent and grandparent for clickable icons
+    const searchAreas = [parent, parent.parentElement, parent.parentElement?.parentElement].filter(Boolean);
+
+    for (const area of searchAreas) {
+      // Find SVG icons, buttons, or clickable spans
+      const clickables = area.querySelectorAll('svg, button, [role="button"], span[class*="icon"], div[class*="icon"], [class*="click"], [class*="reveal"], [class*="show"]');
+
+      for (const clickable of clickables) {
+        try {
+          const rect = clickable.getBoundingClientRect();
+          // Check if visible and reasonable size (icon size)
+          if (rect.width > 0 && rect.width < 50 && rect.height > 0 && rect.height < 50) {
+            console.log('[Content] Clicking element near masked text...');
+            clickable.click();
+            clickedCount++;
+            await sleep(CONFIG.timing.waitBetweenClicks);
+          }
+        } catch (e) {
+          console.log('[Content] Click error:', e.message);
+        }
+      }
+    }
+  }
+
+  // Method 2: Find elements by common TikTok patterns
+  const revealSelectors = [
+    // SVG icons that are clickable
+    'svg[class*="arco"]',
+    '[class*="arco-icon"]',
+    // Buttons near customer info
+    '[class*="customer"] button',
+    '[class*="customer"] svg',
+    '[class*="recipient"] button',
+    '[class*="recipient"] svg',
+    // Generic reveal patterns
+    '[class*="reveal"]',
+    '[class*="unmask"]',
+    '[class*="show-detail"]',
+    '[class*="view-detail"]',
+    // Data view buttons
+    '[data-log_click_for*="plaintext"]',
+    '[data-log_click_for*="reveal"]',
+    '[data-log_click_for*="view"]'
+  ];
+
+  for (const selector of revealSelectors) {
+    try {
+      const elements = document.querySelectorAll(selector);
+      for (const el of elements) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          console.log('[Content] Clicking:', selector);
+          el.click();
+          clickedCount++;
+          await sleep(CONFIG.timing.waitBetweenClicks);
+        }
+      }
+    } catch (e) {
+      // Continue with next selector
+    }
+  }
+
+  // Method 3: Click all small clickable elements in the Customer details area
+  // Find the right sidebar (usually contains customer info)
+  const rightSidebar = document.querySelector('[class*="right-content"], [class*="sidebar"], [class*="detail-right"]');
+  if (rightSidebar) {
+    console.log('[Content] Found right sidebar, looking for clickable icons...');
+    const icons = rightSidebar.querySelectorAll('svg, [class*="icon"]');
+    for (const icon of icons) {
+      try {
+        const rect = icon.getBoundingClientRect();
+        if (rect.width > 5 && rect.width < 40 && rect.height > 5 && rect.height < 40) {
+          // Check if it's near the bottom of the sidebar (customer details area)
+          if (rect.top > 200) {
+            console.log('[Content] Clicking sidebar icon...');
+            icon.click();
+            clickedCount++;
+            await sleep(CONFIG.timing.waitBetweenClicks);
+          }
+        }
+      } catch (e) {
+        // Continue
+      }
+    }
+  }
+
+  // Method 4: Find and click any expand/dropdown icons near masked text
+  const expandIcons = document.querySelectorAll('[class*="expand"], [class*="dropdown"], [class*="arrow"], [class*="chevron"]');
+  for (const icon of expandIcons) {
+    try {
+      const rect = icon.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && rect.top > 200) {
+        // Check if this icon is near masked text
+        const nearbyText = icon.parentElement?.textContent || '';
+        if (nearbyText.includes('***')) {
+          console.log('[Content] Clicking expand icon near masked text...');
+          icon.click();
+          clickedCount++;
+          await sleep(CONFIG.timing.waitBetweenClicks);
+        }
+      }
+    } catch (e) {
+      // Continue
+    }
+  }
+
+  console.log('[Content] Total clicked:', clickedCount);
+
+  // Wait for data to load after clicking
+  if (clickedCount > 0) {
+    await sleep(CONFIG.timing.waitAfterClick);
+  }
+
+  return { clickedCount };
+}
+
+/**
+ * Extract customer data from the page
+ */
+async function extractCustomerData() {
+  console.log('[Content] Extracting customer data...');
+
+  // First, scroll to customer details and click reveal buttons
+  await scrollToCustomerDetails();
+  await sleep(500);
+  await clickRevealButtons();
+  await sleep(1500);
+
+  // Initialize data object
+  const data = {
+    name: null,
+    phone_number: null,
+    full_address: null,
+    raw_texts: [],
+    hasData: false,
+    isMasked: true
+  };
+
+  // Get all text content from the page
+  const pageText = document.body.innerText;
+
+  // Method 1: Look for unmasked phone number pattern (+60...)
+  const phonePatterns = [
+    /\+60\d{9,11}/g,                    // +60123456789
+    /\+60[\d\s\-]{9,14}/g,              // +60 12-345 6789
+    /\(\+60\)\d{9,11}/g,                // (+60)123456789
+    /\(\+60\)[\d\s\-]{9,14}/g,          // (+60) 12-345 6789
+    /60\d{9,11}/g,                       // 60123456789
+    /0\d{2}[\s\-]?\d{3,4}[\s\-]?\d{4}/g // 012-345 6789
+  ];
+
+  for (const pattern of phonePatterns) {
+    const matches = pageText.match(pattern);
+    if (matches) {
+      for (const match of matches) {
+        // Make sure it's not masked
+        if (!match.includes('*')) {
+          data.phone_number = match.trim();
+          console.log('[Content] Found phone:', data.phone_number);
+          break;
+        }
+      }
+    }
+    if (data.phone_number) break;
+  }
+
+  // Method 2: Find Customer details section and extract text
+  const allElements = document.querySelectorAll('*');
+  let inCustomerSection = false;
+  const customerTexts = [];
+
+  for (const el of allElements) {
+    const text = el.textContent?.trim() || '';
+
+    if (text === 'Customer details') {
+      inCustomerSection = true;
+      continue;
+    }
+
+    if (inCustomerSection && text && text.length > 2 && text.length < 200) {
+      // Skip if it's a section header or common UI text
+      if (['What you earned', 'Order history', 'Logistics', 'Parcel'].some(skip => text.startsWith(skip))) {
+        inCustomerSection = false;
+        continue;
+      }
+
+      // Skip if masked
+      if (!text.includes('***')) {
+        customerTexts.push(text);
+      }
+    }
+  }
+
+  data.raw_texts = customerTexts.slice(0, 15);
+  console.log('[Content] Customer texts:', customerTexts);
+
+  // Parse the collected texts
+  for (const text of customerTexts) {
+    // Skip labels
+    if (['User name', 'Shipping address', 'Customer details'].includes(text)) continue;
+
+    // Phone detection
+    if (!data.phone_number && /^[\+\(]?[\d\s\-\(\)]{8,}$/.test(text.replace(/\s/g, ''))) {
+      data.phone_number = text;
+    }
+    // Address detection (long text with address keywords or postal code)
+    else if (!data.full_address && (
+      text.length > 40 ||
+      /\d{5}/.test(text) ||
+      /jalan|lorong|taman|kampung|blok|unit|no\.|floor|tingkat|bandar|malaysia/i.test(text)
+    )) {
+      data.full_address = text;
+    }
+    // Name detection (shorter text, no many numbers, not a label)
+    else if (!data.name && text.length >= 3 && text.length < 60 && !/\d{3,}/.test(text)) {
+      data.name = text;
+    }
+  }
+
+  // Method 3: Try to find specific elements by looking at the DOM structure
+  // TikTok often uses specific class patterns
+  const possibleNameElements = document.querySelectorAll('[class*="name"], [class*="recipient"], [class*="buyer"], [class*="customer"]');
+  for (const el of possibleNameElements) {
+    const text = el.textContent?.trim();
+    if (text && text.length > 2 && text.length < 50 && !text.includes('***') && !text.includes('User name')) {
+      if (!data.name) {
+        data.name = text;
+        console.log('[Content] Found name from element:', data.name);
+      }
+    }
+  }
+
+  // Method 4: Scan all visible text near "User name", "Shipping address" labels
+  const labels = ['User name', 'Shipping address'];
+  for (const label of labels) {
+    const labelElements = Array.from(document.querySelectorAll('*')).filter(el =>
+      el.textContent?.trim() === label && el.children.length === 0
+    );
+
+    for (const labelEl of labelElements) {
+      // Get the next sibling or parent's next child
+      let nextEl = labelEl.nextElementSibling;
+      if (!nextEl && labelEl.parentElement) {
+        nextEl = labelEl.parentElement.nextElementSibling;
+      }
+
+      if (nextEl) {
+        const text = nextEl.textContent?.trim();
+        if (text && !text.includes('***')) {
+          if (label === 'User name' && !data.name && text.length < 60) {
+            data.name = text;
+          } else if (label === 'Shipping address' && !data.full_address) {
+            data.full_address = text;
+          }
+        }
+      }
+    }
+  }
+
+  // Check if we got any useful data
+  data.hasData = !!(data.name || data.phone_number || data.full_address);
+  data.isMasked = !data.hasData ||
+    (data.name?.includes('***')) ||
+    (data.phone_number?.includes('***')) ||
+    (data.full_address?.includes('***'));
+
+  console.log('[Content] Extracted data:', data);
+
+  return data;
 }
 
 // Log that content script is loaded
