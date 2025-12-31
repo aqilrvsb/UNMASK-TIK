@@ -16,7 +16,9 @@
   ],
   "externally_connectable": {
     "matches": [
+      "https://system-tiktok.vercel.app/*",
       "https://tiktokshopordersystem.vercel.app/*",
+      "https://*.vercel.app/*",
       "http://localhost:*/*",
       "http://127.0.0.1:*/*"
     ]
