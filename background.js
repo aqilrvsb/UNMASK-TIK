@@ -158,14 +158,8 @@ async function handleStartFromWebApp(message, sender) {
   };
 
   try {
-    // Fetch actual order details from Supabase using the database IDs
-    // The web app sends database 'id' values, not TikTok order numbers
-    const orders = await fetchOrdersByIds(orderIds);
-
-    if (orders.length === 0) {
-      state.isRunning = false;
-      return { error: 'No orders found in database' };
-    }
+    // Use provided order IDs directly (TikTok order numbers)
+    const orders = orderIds.map(id => ({ order_id: id }));
 
     state.orders = orders;
     state.total = orders.length;
@@ -351,7 +345,6 @@ async function processCurrentOrder() {
 
   const order = state.orders[state.currentOrderIndex];
   const orderId = order.order_id;       // TikTok order number
-  const dbId = order.db_id;             // Database UUID
   const orderIdShort = orderId.slice(-8);
 
   try {
@@ -376,8 +369,8 @@ async function processCurrentOrder() {
       throw new Error('Data still masked - reveal may have failed');
     }
 
-    // Update in Supabase using database ID
-    const updated = await updateOrderInSupabase(dbId, orderId, customerData);
+    // Update in Supabase using order_id
+    const updated = await updateOrderInSupabase(orderId, customerData);
 
     if (updated) {
       state.success++;
@@ -595,16 +588,15 @@ async function getMaskedOrders(credentialId) {
 
 /**
  * Update order in Supabase with unmasked data
- * @param {string} dbId - Database UUID
- * @param {string} orderId - TikTok order number (for logging)
+ * @param {string} orderId - TikTok order number
  * @param {object} customerData - Extracted customer data
  */
-async function updateOrderInSupabase(dbId, orderId, customerData) {
-  console.log('[Background] Updating order in DB:', dbId, 'TikTok ID:', orderId);
+async function updateOrderInSupabase(orderId, customerData) {
+  console.log('[Background] Updating order:', orderId);
 
-  // First get existing order by database ID
+  // First get existing order by TikTok order_id
   const getResponse = await fetch(
-    `${SUPABASE_URL}/rest/v1/orders?id=eq.${dbId}&select=order_data`,
+    `${SUPABASE_URL}/rest/v1/orders?order_id=eq.${orderId}&select=order_data`,
     {
       headers: {
         'apikey': SUPABASE_KEY,
@@ -615,7 +607,7 @@ async function updateOrderInSupabase(dbId, orderId, customerData) {
 
   const orders = await getResponse.json();
   if (!orders || orders.length === 0) {
-    console.error('[Background] Order not found in database:', dbId);
+    console.error('[Background] Order not found in database:', orderId);
     return false;
   }
 
@@ -650,9 +642,9 @@ async function updateOrderInSupabase(dbId, orderId, customerData) {
     isUnmasked
   });
 
-  // Update order using database ID
+  // Update order using TikTok order_id
   const updateResponse = await fetch(
-    `${SUPABASE_URL}/rest/v1/orders?id=eq.${dbId}`,
+    `${SUPABASE_URL}/rest/v1/orders?order_id=eq.${orderId}`,
     {
       method: 'PATCH',
       headers: {
