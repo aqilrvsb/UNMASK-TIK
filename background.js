@@ -473,33 +473,42 @@ function broadcastStatus(message) {
  * Returns orders with both database id and TikTok order_id
  */
 async function fetchOrdersByIds(ids) {
-  // Build comma-separated list for IN query
-  const idList = ids.map(id => `"${id}"`).join(',');
+  console.log('[Background] Fetching orders for IDs:', ids.length);
 
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/orders?id=in.(${idList})&select=id,order_id,order_data`,
-    {
+  // For Supabase REST API, the IN query format is: id=in.(value1,value2,value3)
+  // No quotes needed for UUIDs
+  const idList = ids.join(',');
+
+  const url = `${SUPABASE_URL}/rest/v1/orders?id=in.(${idList})&select=id,order_id,order_data`;
+  console.log('[Background] Fetch URL:', url.substring(0, 100) + '...');
+
+  try {
+    const response = await fetch(url, {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`
       }
-    }
-  );
+    });
 
-  if (!response.ok) {
-    console.error('[Background] Failed to fetch orders:', response.status);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Background] Failed to fetch orders:', response.status, errorText);
+      return [];
+    }
+
+    const orders = await response.json();
+    console.log('[Background] Fetched', orders.length, 'orders from database');
+
+    // Return with both database id and TikTok order_id
+    return orders.map(o => ({
+      db_id: o.id,           // Database UUID
+      order_id: o.order_id,  // TikTok order number (for URL)
+      order_data: o.order_data
+    }));
+  } catch (error) {
+    console.error('[Background] Fetch error:', error);
     return [];
   }
-
-  const orders = await response.json();
-  console.log('[Background] Fetched', orders.length, 'orders from database');
-
-  // Return with both database id and TikTok order_id
-  return orders.map(o => ({
-    db_id: o.id,           // Database UUID
-    order_id: o.order_id,  // TikTok order number (for URL)
-    order_data: o.order_data
-  }));
 }
 
 /**
