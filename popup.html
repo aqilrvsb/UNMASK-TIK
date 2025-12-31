@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TikTok Unmasker</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 350px;
+      min-height: 400px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+    }
+
+    .container {
+      padding: 20px;
+    }
+
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      margin-bottom: 5px;
+    }
+
+    .header p {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 5px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 13px;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c82333;
+    }
+
+    .status {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      display: none;
+    }
+
+    .status.show {
+      display: block;
+    }
+
+    .status.info {
+      background: #e3f2fd;
+      color: #1565c0;
+      border: 1px solid #90caf9;
+    }
+
+    .status.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #a5d6a7;
+    }
+
+    .status.error {
+      background: #ffebee;
+      color: #c62828;
+      border: 1px solid #ef9a9a;
+    }
+
+    .progress-container {
+      margin-top: 15px;
+      display: none;
+    }
+
+    .progress-container.show {
+      display: block;
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+
+    .progress-text {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #666;
+      margin-top: 5px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .stat {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #333;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      color: #888;
+      text-transform: uppercase;
+    }
+
+    .stat.success .stat-value {
+      color: #2e7d32;
+    }
+
+    .stat.failed .stat-value {
+      color: #c62828;
+    }
+
+    .log {
+      margin-top: 15px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 11px;
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 10px;
+      display: none;
+    }
+
+    .log.show {
+      display: block;
+    }
+
+    .log-entry {
+      padding: 3px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+
+    .log-entry.success {
+      color: #2e7d32;
+    }
+
+    .log-entry.error {
+      color: #c62828;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .warning {
+      background: #fff3e0;
+      border: 1px solid #ffcc80;
+      color: #e65100;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      margin-bottom: 15px;
+    }
+
+    .warning strong {
+      display: block;
+      margin-bottom: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>TikTok Order Unmasker</h1>
+      <p>Automatically reveal customer details</p>
+    </div>
+
+    <div class="card">
+      <div class="warning" id="notOnTiktok" style="display: none;">
+        <strong>Not on TikTok Seller Center</strong>
+        Please open <a href="https://seller-my.tiktok.com/order" target="_blank">TikTok Seller Center</a> first.
+      </div>
+
+      <div id="loginForm">
+        <div class="form-group">
+          <label>Your Email</label>
+          <input type="email" id="email" placeholder="your.email@example.com">
+          <div class="hint">Email registered in the system</div>
+        </div>
+
+        <button class="btn btn-primary" id="startBtn">
+          <span>Start Auto Unmask</span>
+        </button>
+      </div>
+
+      <div id="runningView" style="display: none;">
+        <button class="btn btn-danger" id="stopBtn">
+          <span>Stop</span>
+        </button>
+
+        <div class="progress-container show">
+          <div class="progress-bar">
+            <div class="progress-bar-fill" id="progressFill" style="width: 0%"></div>
+          </div>
+          <div class="progress-text">
+            <span id="progressText">0 / 0</span>
+            <span id="progressPercent">0%</span>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat success">
+            <div class="stat-value" id="successCount">0</div>
+            <div class="stat-label">Success</div>
+          </div>
+          <div class="stat failed">
+            <div class="stat-value" id="failedCount">0</div>
+            <div class="stat-label">Failed</div>
+          </div>
+        </div>
+
+        <div class="log show" id="logContainer">
+          <div class="log-entry">Waiting to start...</div>
+        </div>
+      </div>
+
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
