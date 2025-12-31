@@ -131,10 +131,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
  * Handle start from web app
  */
 async function handleStartFromWebApp(message, sender) {
-  const { email, orderIds } = message;
+  const { orderIds } = message;
 
   if (state.isRunning) {
     return { error: 'Already running' };
+  }
+
+  if (!orderIds || orderIds.length === 0) {
+    return { error: 'No order IDs provided' };
   }
 
   // Reset state
@@ -143,7 +147,7 @@ async function handleStartFromWebApp(message, sender) {
     shouldStop: false,
     currentTabId: null,
     credentialId: null,
-    email: email,
+    email: null,
     processed: 0,
     total: 0,
     success: 0,
@@ -154,39 +158,8 @@ async function handleStartFromWebApp(message, sender) {
   };
 
   try {
-    // Broadcast to web app
-    broadcastStatus({ type: 'STATUS', status: 'connecting', message: 'Logging in...' });
-
-    // Get credential by email
-    const credential = await getCredentialByEmail(email);
-    if (!credential) {
-      state.isRunning = false;
-      return { error: 'Email not found. Please check your email.' };
-    }
-
-    state.credentialId = credential.id;
-    broadcastStatus({
-      type: 'LOGIN_SUCCESS',
-      email: email,
-      shopName: credential.shop_name
-    });
-
-    // If specific orders provided, use those. Otherwise fetch masked orders.
-    let orders;
-    if (orderIds && orderIds.length > 0) {
-      // Use provided order IDs
-      orders = orderIds.map(id => ({ order_id: id }));
-    } else {
-      // Fetch masked orders
-      broadcastStatus({ type: 'STATUS', status: 'connecting', message: 'Fetching orders...' });
-      orders = await getMaskedOrders(credential.id);
-    }
-
-    if (orders.length === 0) {
-      state.isRunning = false;
-      broadcastStatus({ type: 'COMPLETE', message: 'No orders need unmasking!', processed: 0, total: 0, success: 0, failed: 0 });
-      return { success: true, message: 'No orders to process' };
-    }
+    // Use provided order IDs directly
+    const orders = orderIds.map(id => ({ order_id: id }));
 
     state.orders = orders;
     state.total = orders.length;
@@ -194,7 +167,7 @@ async function handleStartFromWebApp(message, sender) {
     broadcastStatus({
       type: 'STATUS',
       status: 'running',
-      message: `Found ${orders.length} orders to unmask`,
+      message: `Processing ${orders.length} orders...`,
       total: orders.length
     });
 
@@ -215,6 +188,7 @@ async function handleStartFromWebApp(message, sender) {
   } catch (error) {
     console.error('[Background] Start error:', error);
     state.isRunning = false;
+    broadcastStatus({ type: 'ERROR', message: error.message });
     return { error: error.message };
   }
 }
